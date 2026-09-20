@@ -6,6 +6,7 @@ const sidebars = {
     'contracts',
     'run-a-validator',
     'upgrades',
+    'troubleshooting',
   ],
 };
 

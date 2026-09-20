@@ -8,10 +8,11 @@ sidebar_position: 1
 # Quickstart
 
 :::caution Pre-testnet
-Konstellation has not launched a public network yet. The values on this page
-are placeholders until `testnet-1` genesis is finalized in the [`networks`
-repo](https://github.com/konstellation-network/networks). Do not use them for
-anything other than local development.
+Konstellation has not launched a public network yet. The `testnet-1` RPC
+and explorer URLs on this page are placeholders until the genesis is
+published in the [`networks`
+repo](https://github.com/konstellation-network/networks). Everything else —
+chain ids, token, addresses, the local dev chain — is final.
 :::
 
 ## Network parameters
@@ -28,41 +29,129 @@ anything other than local development.
 | Base denom | `esp` (18 decimals; 1 KASH = 10^18 `esp`) |
 | Bech32 prefix | `kons` |
 
+The EIP-155 ids are enforced by the node: a real network's id is used only by
+that network, and a local chain can never be given one, so a transaction
+signed for a dev chain cannot replay on `testnet-1` or mainnet.
+
 ## Add Konstellation to MetaMask
 
-TODO once `testnet-1` RPC is live — see [RPC Endpoints](/rpc-endpoints).
+MetaMask → **Settings → Networks → Add a network → Add a network manually**.
+Rabby and other EIP-3085 wallets take the same values.
 
-1. Open MetaMask → **Settings → Networks → Add network manually**.
-2. Fill in:
-   - **Network name:** Konstellation Testnet
-   - **New RPC URL:** _TBD — testnet-1 has not launched_
-   - **Chain ID:** `56671`
-   - **Currency symbol:** KASH
-   - **Block explorer URL:** _TBD — see [`explorer`](https://github.com/konstellation-network/explorer)_
+### testnet-1
+
+| Field | Value |
+|---|---|
+| Network name | Konstellation Testnet |
+| New RPC URL | **TBD** — published in `networks/testnet-1/chain.json` when the network launches; see [RPC Endpoints](/rpc-endpoints) |
+| Chain ID | `56671` |
+| Currency symbol | `KASH` |
+| Currency decimals | 18 |
+| Block explorer URL | **TBD** — Blockscout, see the [`explorer`](https://github.com/konstellation-network/explorer) repo |
+
+Test KASH comes from the faucet (**TBD** — [`faucet`](https://github.com/konstellation-network/faucet) repo).
+
+### Local dev chain
+
+| Field | Value |
+|---|---|
+| Network name | Konstellation Local |
+| New RPC URL | `http://localhost:8545` |
+| Chain ID | `56670` |
+| Currency symbol | `KASH` |
+| Currency decimals | 18 |
+| Block explorer URL | none |
+
+Programmatically (`wallet_addEthereumChain`), for the local chain:
+
+```json
+{
+  "chainId": "0xdd5e",
+  "chainName": "Konstellation Local",
+  "nativeCurrency": { "name": "KASH", "symbol": "KASH", "decimals": 18 },
+  "rpcUrls": ["http://localhost:8545"]
+}
+```
+
+`0xdd5e` is 56670; `testnet-1`'s `56671` is `0xdd5f`, mainnet's `5667` is `0x1623`.
 
 ## Run a local dev chain
 
-The `konstellation` repo ships a single-node dev chain for testing against
-before any public network exists:
+The `konstellation` repo ships a single-node dev chain. It needs Go (see
+`go.mod` for the version) and `jq`.
 
 ```bash
-cd ~/src/konstellation
+git clone https://github.com/Konstellation-Network/konstellation.git
+cd konstellation
 ./local_node.sh -y
 ```
 
-This starts:
+`-y` wipes any previous chain data in `~/.konstellationd` without asking.
+The script builds and installs `konstellationd`, runs `konstellationd init`
+with chain-id `konstellation-local-1`, funds the dev accounts in genesis, and
+starts the node with every API enabled:
 
-- JSON-RPC at `http://localhost:8545` (EIP-155 chain ID `56670`)
-- Prometheus metrics at `:26660`
+| | |
+|---|---|
+| EVM JSON-RPC | `http://localhost:8545` (namespaces `eth,txpool,personal,net,debug,web3`) |
+| EVM WebSocket | `ws://localhost:8546` |
+| CometBFT RPC | `http://localhost:26657` |
+| Cosmos REST / gRPC | `http://localhost:1317` / `localhost:9090` |
+| Prometheus metrics | `:26660` |
+| EIP-155 chain id | `56670` |
+| Block time | ~1 s (`timeout_commit = "1s"`); node `minimum-gas-prices` and `evm.min-tip` are 0 |
 
-A funded dev account (`dev0`) is pre-seeded from a public, well-known mnemonic
-— never use it for anything beyond local testing:
+The dev chain is a real `konstellationd`: the same genesis preinstalls,
+precompiles, compliance module and circuit breaker as `testnet-1`, with
+governance and compliance timelocks shortened to seconds so they can be
+exercised in a session (voting period 30 s, compliance timelocks 60 s, the
+validator key as the compliance authority).
+
+### Dev accounts
+
+Funded accounts `dev0`–`dev3` are created from **public, well-known
+mnemonics** written into `local_node.sh` — never use them for anything
+beyond local testing. `dev0`:
 
 ```
 0xC6Fe5D33615a1C52c08018c47E8Bc53646A0E101
 ```
 
+Its private key is in `local_node.sh` (search for `dev0`). The accounts are
+also in the `konstellationd` test keyring, so the CLI can sign with them:
+
+```bash
+konstellationd keys list --keyring-backend test
+```
+
 ## Send your first transaction
 
-TODO: walk through a bank send and an EVM transfer against the local dev
-chain once the dev-chain tooling stabilizes.
+Against the local chain, with [Foundry](https://getfoundry.sh)'s `cast`:
+
+```bash
+# balance of dev0, in KASH
+cast balance 0xC6Fe5D33615a1C52c08018c47E8Bc53646A0E101 --rpc-url http://localhost:8545 --ether
+
+# send 1 KASH from dev0 to another address (the dev0 key is in local_node.sh)
+cast send <recipient> --value 1ether \
+  --rpc-url http://localhost:8545 \
+  --private-key <dev0 private key from local_node.sh>
+
+# the same asset, seen from the Cosmos side (1 KASH = 1000000000000000000esp)
+konstellationd query bank balances $(konstellationd keys show dev0 -a --keyring-backend test)
+```
+
+`cast`'s `1ether` is 10^18 base units, which on Konstellation is 1 KASH. A
+Cosmos-side bank send works the same way and burns the same EIP-1559 base
+fee. The base fee starts at `1000000000esp` per gas (1 gwei-equivalent) in
+genesis and adjusts from block 1, decaying toward 0 while the chain is idle;
+a transaction priced below the current base fee is rejected, so price at the
+genesis value to be safe:
+
+```bash
+konstellationd tx bank send dev0 <kons1... address> 1000000000000000000esp \
+  --keyring-backend test --gas-prices 1000000000esp -y
+```
+
+Next: the [preinstalled contracts](/contracts) every address on the chain
+can rely on, or [run a node](/run-a-validator).

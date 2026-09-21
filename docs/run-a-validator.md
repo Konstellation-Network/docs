@@ -10,9 +10,12 @@ sidebar_position: 4
 There is no validator set to join yet. Everything on this page about the
 binary's behaviour is real and verified against the current `konstellationd`;
 the `testnet-1` specifics (peers, genesis, release version) are placeholders
-until `networks/testnet-1` publishes them. External operators are invited
-onto `testnet-1` precisely so they can find the gaps in this page
-(`ENGINEERING.md §15`, phase 6) — if something here does not work as
+until `networks/testnet-1` publishes them. The genesis set on both networks
+is 10 foundation-run validators; independent operators are admitted
+afterwards through the permissioned procedure described under
+[Become a validator](#become-a-validator) — and are admitted onto
+`testnet-1` first precisely so they can find the gaps in this page
+(`ENGINEERING.md §15`, phase 6). If something here does not work as
 written, that is a docs bug, please report it.
 :::
 
@@ -20,7 +23,10 @@ written, that is a docs bug, please report it.
 network it is on beyond the chain-id checks described below: everything that
 differs between `testnet-1` and `konstellation-1` lives in the network's
 `genesis.json` (in the [`networks`](https://github.com/konstellation-network/networks)
-repo) and in your own configuration.
+repo) and in your own configuration. The EVM runs the **Prague** (Pectra)
+fork from genesis, which is what `cosmos/evm` v0.7.3 activates by default;
+Osaka is deliberately not enabled (D17 in `ENGINEERING.md §11`) — nothing
+for an operator to configure, but worth knowing when a wallet or tool asks.
 
 ## Hardware
 
@@ -134,8 +140,9 @@ If a recipe tells you to patch `stake` → `esp`, set `evm-chain-id`, or set
   ```
 
 - **`config.toml` `[mempool] type = "app"`** is written automatically. The
-  app-side EVM mempool ("Krakatoa") is on, and CometBFT v0.39 refuses to
-  start with the default `"flood"` when the application supplies a mempool:
+  app-side EVM mempool ("Krakatoa") is on, and cosmos/evm's server-config
+  validation (before CometBFT even starts) refuses the default `"flood"`
+  when the application supplies a mempool:
 
   ```
   Error: EVM mempool enabled, but comet-bft has invalid config.toml:mempool.type (want 'app', got 'flood'): error in app.toml
@@ -163,11 +170,11 @@ At startup the node reads the chain-id from `genesis.json` first (honouring
 it refuses to start and names both files:
 
 ```
-panic: --chain-id "konstellation-1" disagrees with /home/kons/.konstellationd/config/genesis.json ("testnet-1"); the genesis is authoritative
+panic: --chain-id "konstellation-1" disagrees with /home/konstellation/.konstellationd/config/genesis.json ("testnet-1"); the genesis is authoritative
 ```
 
 ```
-panic: client.toml chain-id "konstellation-1" disagrees with /home/kons/.konstellationd/config/genesis.json ("testnet-1"); fix client.toml (`konstellationd config set client chain-id testnet-1`)
+panic: client.toml chain-id "konstellation-1" disagrees with /home/konstellation/.konstellationd/config/genesis.json ("testnet-1"); fix client.toml (`konstellationd config set client chain-id testnet-1`)
 ```
 
 The fix is the one in the message: correct `client.toml` (or drop the flag),
@@ -258,15 +265,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=kons
-Group=kons
-ExecStart=/usr/local/bin/cosmovisor run start --home /home/kons/.konstellationd
+User=konstellation
+Group=konstellation
+ExecStart=/usr/local/bin/cosmovisor run start --home /home/konstellation/.konstellationd
 Restart=on-failure
 RestartSec=3
 LimitNOFILE=65535
 
 Environment=DAEMON_NAME=konstellationd
-Environment=DAEMON_HOME=/home/kons/.konstellationd
+Environment=DAEMON_HOME=/home/konstellation/.konstellationd
 # Never true: an upgrade binary reaching a validator without a human
 # verifying its checksum is exactly what the release process exists to prevent.
 Environment=DAEMON_ALLOW_DOWNLOAD_BINARIES=false
@@ -279,29 +286,76 @@ WantedBy=multi-user.target
 
 ## Become a validator
 
-Staking parameters that bind: `min_commission_rate` **5 %**, `max_validators`
-**30**, unbonding **21 days**, downtime slash **0.01 %** (miss more than 50 %
-of a 100-block window; 10-minute jail, then `tx slashing unjail`), double-sign
-slash **5 %** with permanent tombstone.
+The genesis set is **10 foundation-run validators** created by gentx, on
+`testnet-1` and `konstellation-1` alike (`max_validators` is 30, so 20 seats
+are empty at genesis). Admission of further validators is **permissioned**
+(decisions D7 and D16 in `ENGINEERING.md §11`), and it is enforced by the
+chain, not by policy: `/cosmos.staking.v1beta1.MsgCreateValidator` is
+disabled in `x/circuit` genesis state on both networks, so a plain
+`tx staking create-validator` is refused at submission:
 
-- **At genesis:** you receive a `genesis.pre-gentx.json` with your bootstrap
-  allocation in it. Use it as `config/genesis.json`, create your key and
-  produce a gentx; the file goes back to the genesis coordinator.
+```
+circuit breaker disables /cosmos.staking.v1beta1.MsgCreateValidator: unauthorized
+```
 
-  ```sh
-  konstellationd keys add validator --key-type eth_secp256k1
-  konstellationd genesis gentx validator 24000000000000000000000000esp \
-    --chain-id testnet-1 --moniker <moniker> \
-    --commission-rate 0.05 --commission-max-rate 0.20 --commission-max-change-rate 0.01 \
-    --min-self-delegation 1000000000000000000
-  ```
+:::note
+This is the decided design. As of 2026-09-21 the genesis tooling does not yet
+write the entry (`konstellationd init` produces an empty
+`disabled_type_urls`; it is added before the `testnet-1` genesis is cut), so
+a local dev chain started with `local_node.sh` does not refuse the message.
+:::
 
-  Amounts are in `esp` (18 decimals): `24000000000000000000000000esp` is
-  24 M KASH, `1000000000000000000` is 1 KASH. `--min-self-delegation` is a
-  per-validator value that can be raised later, never lowered.
+Gentx is not a path open to outside operators: it only exists at genesis and
+bypasses the message router. "Permissioned" is about who may *validate*;
+delegating to any validator is open from genesis.
 
-- **After genesis:** sync a full node first, then
-  `konstellationd tx staking create-validator` with the same parameters.
+### The admission procedure
+
+The foundation runs each admission as an announced window, following
+`infra/runbooks/validator-admission.md`. What you do:
+
+1. **Run a synced full node** on the network, behind a sentry, with the
+   topology above (`pex = false`, your node id in the sentry's
+   `private_peer_ids`), on hosts you control.
+2. **Send the foundation** your consensus public key and your operator
+   address over the operator channel:
+
+   ```sh
+   konstellationd comet show-validator            # or the Horcrux cluster's key
+   konstellationd keys show <operator> -a         # kons1…
+   konstellationd keys show <operator> --bech val # konsvaloper1…
+   ```
+
+3. **Pre-build and pre-sign** the `MsgCreateValidator` and deliver it as a
+   file. The lead dry-runs it (`tx validate-signatures`) and checks the
+   pubkey, amounts and commission against what was agreed; nothing is
+   broadcast yet — broadcasting now is refused by the breaker anyway.
+
+   ```sh
+   konstellationd tx staking create-validator validator.json \
+     --from <operator> --chain-id <net> --node <rpc> \
+     --generate-only > unsigned.json
+   konstellationd tx sign unsigned.json --from <operator> --chain-id <net> --node <rpc> > signed-create-validator.json
+   ```
+
+4. **During the window** the 3-of-5 operations multisig resets the breaker
+   for that message type, your signed `create-validator` is broadcast, and
+   the multisig disables the type again — aimed at one block, at most a
+   window of seconds. A message that fails inside the window (wrong
+   commission, insufficient funds, bad pubkey) means a *new* window, not an
+   open gate, so get the parameters right first.
+
+Parameters that bind (D10): `commission_rate` ≥ `min_commission_rate`
+**5 %**, `min_self_delegation` ≤ what you actually self-delegate (it can be
+raised later, never lowered; amounts are in `esp`, `1000000000000000000` is
+1 KASH), unbonding **21 days**, downtime slash **0.01 %** (miss more than
+50 % of a 100-block window; 10-minute jail, then `tx slashing unjail`),
+double-sign slash **5 %** with permanent tombstone.
+
+A validator admitted this way enters the active set immediately (≥ 1 KASH
+self-delegated qualifies for an empty seat) and stays until it unbonds or is
+jailed. Going permissionless is a governance proposal that removes the type
+from the disabled list for good; the stages are in the whitepaper roadmap.
 
 ## Upgrades
 
@@ -345,8 +399,10 @@ publishes the genesis. The authoritative join page will be
 | State sync / snapshots | **TBD** — `networks/testnet-1/snapshots.md` once archive nodes exist |
 | Public RPC | **TBD** — see [RPC Endpoints](/rpc-endpoints) |
 
-At genesis the validator set is the in-house five; 3–5 external operators
-are invited afterwards (phase 6). Governance on `testnet-1` is deliberately
+At genesis the validator set is 10 foundation-run validators
+(`max_validators` 30); independent operators are admitted afterwards through
+the permissioned D16 procedure above (phase 6) — `testnet-1` rehearses
+exactly what mainnet runs, admissions included. Governance on `testnet-1` is deliberately
 fast (2-hour voting period) so upgrade drills take hours, not days;
 everything economic is identical to mainnet.
 

@@ -131,11 +131,12 @@ Source: `konstellation/x/compliance/precompile/ICompliance.sol` (the ABI is
 - Two lists. The **blocklist** (`isFrozen`) is what the chain enforces; the
   **allowlist** (`isVerified`) is opt-in — the chain never requires an
   address to be verified to transact, only being frozen stops a tx.
-- List changes come from the compliance authority through a 24-hour on-chain
-  timelock, or as an emergency freeze that takes effect immediately and
-  auto-expires after the timelock unless ratified; governance can override
-  any entry. Every action is an on-chain event. (Timelocks are 60 s on a
-  `local_node.sh` dev chain.)
+- List changes come from the compliance authority through an on-chain
+  timelock — **24 h on mainnet**; it is a per-network genesis parameter,
+  short on `testnet-1` and 60 s on a `local_node.sh` dev chain — or as an
+  emergency freeze that takes effect immediately and auto-expires after the
+  timelock unless ratified; governance can override any entry. Every action
+  is an on-chain event.
 - Freezing an EOA also clears any EIP-7702 delegation it carried, so a
   smart-account wallet installed before the freeze cannot be driven by a
   relayer afterwards.
@@ -166,18 +167,26 @@ function transfer(address to, uint256 amount) external {
 
 ## WKASH (post-genesis)
 
-`contracts/src/WKASH.sol` is the wrapped native token as ordinary
-deployed bytecode (KASH / `esp`, 18 decimals). It is deliberately **not** a
-genesis preinstall: it is deployed after genesis through `Create2Deployer`
-with a fixed salt, which gives a predictable address without baking
+`contracts/src/WKASH.sol` is the wrapped native token as ordinary deployed
+bytecode (KASH / `esp`, 18 decimals). It is deliberately **not** a genesis
+preinstall: it is deployed after genesis through the preinstalled
+`Create2Deployer`, which gives a fixed, predictable address without baking
 not-yet-audited bytecode into `genesis.json` forever.
 
-| Contract | Address |
-|---|---|
-| WKASH | **TBD — see the `contracts` repo** once deployed on `testnet-1` |
+| Contract | Address | Notes |
+|---|---|---|
+| WKASH | `0x34Ab8285C63b876717C2c56151700D02623559bE` | Same on every network. CREATE2 via `Create2Deployer` `0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2`, salt `keccak256("konstellation-network/contracts:WKASH:v1")`. Pinned by `contracts/test/DeployWKASH.t.sol`, which fails if a code, solc, optimizer or `evm_version` change moves it. |
 
-Solidity that only needs the native token as an ERC-20 can use the werc20
-precompile at `0xD4949664cD82660AaE99bEdc034a0deA8A0bd517` today.
+The bytecode is compiled metadata-free (`bytecode_hash = "none"`,
+`cbor_metadata = false`) so a comment edit cannot move the address; the
+trade-off is that Blockscout source verification shows a **partial match**
+(metadata stripped), which is expected. Contracts are compiled for the
+**Prague** EVM (`evm_version = "prague"`, D17) — the fork the chain runs from
+genesis; Osaka is not enabled, so never compile for it (`CLZ` would be an
+invalid opcode here). Cancun-targeted bytecode runs unchanged.
+
+Solidity that only needs the native token as an ERC-20 can also use the
+werc20 precompile at `0xD4949664cD82660AaE99bEdc034a0deA8A0bd517`.
 
 ## Vesting
 
@@ -187,17 +196,35 @@ because a peer chain attributed its exploit to a flaw touching vesting
 accounts and balance handling. Keeping vesting in audited application code
 keeps consensus-critical account logic stock.
 
-The design the contracts implement (`TOKENOMICS.md §7`):
+Built 2026-09-20 on an OpenZeppelin v5.7.0 base:
 
-| Schedule | Shape | Revocable |
-|---|---|---|
-| Founding team & early contributors | 12-month cliff, then linear over 36 months (4 years total); one contract per person | **yes** — the foundation multisig can revoke a departing member's grant: unvested tokens return to the treasury, vested tokens stay with the beneficiary |
-| Treasury (foundation) | 20 % liquid at genesis, remainder linear over 48 months | no |
-| Community & developers | released programmatically over 5 years, front-loaded | no |
+| File | Role |
+|---|---|
+| `KonstellationVestingWallet.sol` | non-revocable wallet: treasury and community tranches |
+| `RevocableVestingWallet.sol` | team wallet: one-shot `revoke()` by the foundation multisig; unvested returns to the treasury, vested stays with the beneficiary |
+| `VestingSchedules.sol` | the one place `TOKENOMICS.md §7`'s numbers live (a vesting year is 365 days) |
+| `script/DeployVesting.s.sol` | JSON config → CREATE2 wallets; `predict()` gives the addresses genesis funds |
 
-The contracts are being built now. No addresses exist yet; on `testnet-1`
-they are exercised as ordinary contract deployments, not genesis state. This
-page will list the deployed instances once `networks/<net>/` records them.
+Every wallet is a CREATE2 deploy through `Create2Deployer`, so its address
+is known before genesis and **`genesis.json` funds it directly at block 0**
+— there is no post-genesis funding step. Vesting is **native KASH only**:
+OpenZeppelin's ERC-20 `release(token)` path is disabled on purpose, because
+the werc20 precompile presents the native balance as an ERC-20 and would let
+a beneficiary withdraw the same KASH twice.
+
+The schedules (`TOKENOMICS.md §7`, on a 1 B KASH supply):
+
+| Bucket | Liquid at genesis | Locked part | Revocable |
+|---|---|---|---|
+| Founding team & early contributors (220 M) | **10 % of each grant** — a plain genesis balance, never in a wallet | 90 % in a `RevocableVestingWallet` per person: start = TGE + 1 year, cliff 0, duration 3 years (i.e. nothing until month 12, then linear over 36 months) | **yes** — foundation multisig |
+| Community & developers (330 M) | **50 M** community-pool seed, written into genesis `distribution` state (a module account: no contract, no key, spendable only by governance proposal) | 280 M — grants 180 M and incentives 100 M — in non-revocable `KonstellationVestingWallet`s, five yearly tranches of 30 / 25 / 20 / 15 / 10 %, each linear within its year | no |
+| Treasury (250 M) | 50 M (20 %) | 200 M linear over 48 months in a non-revocable wallet | no |
+
+Per-wallet addresses are a function of the beneficiary config
+(`script/config/vesting.json`, from `vesting.example.json`; real team beneficiaries and TGE are not yet
+filled in). `testnet-1` mirrors the same shape with test addresses. This
+page will list the deployed instances once `networks/<net>/genesis.json`
+funds them.
 
 ## Verification
 

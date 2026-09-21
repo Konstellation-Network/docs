@@ -58,11 +58,19 @@ condition is checked in the ante handler and the mempool pre-check, so
 nonce is not consumed:
 
 ```
-kons1... (0x...) is not allowed to receive funds: it is the "fee_collector" module account
+kons1... (0x...) is not allowed to receive funds: it is the "fee_collector" module account: unauthorized
 ```
 
 ```
-kons1... (0x...) is not allowed to receive funds: blocked address (module account or precompile)
+kons1... (0x...) is not allowed to receive funds: blocked address (module account or precompile): unauthorized
+```
+
+Most tooling never gets that far: without an explicit `--gas-limit`, `cast`
+and wallets call `eth_estimateGas` first, and the simulation hits the same
+guard at its (uncommitted) state write, so what you see is:
+
+```
+execution reverted: failed to set account: kons1... is not allowed to receive funds: unauthorized
 ```
 
 **Residual case: internal calls.** The submission check only sees the
@@ -95,16 +103,17 @@ pre-check as well as the ante handler, so the refusal is immediate and
 explained rather than discovered at block time.
 
 Freezes come from the compliance authority (a foundation multisig on
-mainnet) through a 24-hour on-chain timelock, or as an **emergency freeze**
-that takes effect immediately and auto-expires after the timelock unless
-ratified; governance can override any entry. Every change is an on-chain
+mainnet) through an on-chain timelock — 24 h on mainnet; a per-network
+genesis parameter, short on `testnet-1` and 60 s on a local dev chain — or
+as an **emergency freeze** that takes effect immediately and auto-expires
+after the timelock unless ratified; governance can override any entry. Every change is an on-chain
 event.
 
 **Check an address's standing:**
 
 ```bash
 konstellationd query compliance status kons1...       # or the 0x form
-konstellationd query compliance entries               # page through a list
+konstellationd query compliance entries block         # or `allow`; page through one list
 konstellationd query compliance pending               # scheduled updates
 ```
 
@@ -125,22 +134,26 @@ From Solidity, the same lists are readable through the
 Being *verified* (on the allow list) is never required to transact; only the
 block list stops a transaction.
 
-## "circuit breaker disables …" / "tx type not allowed"
+## "circuit breaker disables …"
 
-**Symptom.** A transaction is refused at submission with one of:
-
-```
-circuit breaker disables /ibc.applications.transfer.v1.MsgTransfer
-```
+**Symptom.** A transaction is refused at submission (`codespace: sdk`,
+`code: 4`) with:
 
 ```
-tx type not allowed
+circuit breaker disables /ibc.applications.transfer.v1.MsgTransfer: unauthorized
 ```
 
 or, if it somehow reached a block, fails at execution with:
 
 ```
 circuit breaker disallows execution of message /ibc.applications.transfer.v1.MsgTransfer
+```
+
+A related refusal, only ever seen by the breaker's admin, is an attempt to
+trip a protected type:
+
+```
+/cosmos.circuit.v1.MsgResetCircuitBreaker cannot be disabled: the breaker must stay resettable: unauthorized
 ```
 
 **What it means.** The chain runs the SDK circuit breaker (`x/circuit`). Its
@@ -157,6 +170,7 @@ Two message families are worth knowing by name:
 |---|---|
 | `/ibc.applications.transfer.v1.MsgTransfer` | all IBC sends stop, Cosmos and EVM (the ICS20 precompile included) |
 | `/cosmos.evm.vm.v1.MsgEthereumTx` | the **entire EVM is paused** — every `eth_sendRawTransaction` is refused until reset |
+| `/cosmos.staking.v1beta1.MsgCreateValidator` | **disabled by design from genesis** on both networks: validator admission is permissioned (D16), see [Run a Validator](/run-a-validator#become-a-validator). Not a fault. |
 
 The breaker cannot disable its own messages or governance's, so a trip is
 always reversible.

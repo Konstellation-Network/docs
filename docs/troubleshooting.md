@@ -65,13 +65,17 @@ kons1... (0x...) is not allowed to receive funds: it is the "fee_collector" modu
 kons1... (0x...) is not allowed to receive funds: blocked address (module account or precompile): unauthorized
 ```
 
-Most tooling never gets that far: without an explicit `--gas-limit`, `cast`
-and wallets call `eth_estimateGas` first, and the simulation hits the same
-guard at its (uncommitted) state write, so what you see is:
+What you see depends on the recipient (both reproduced on a dev chain,
+2026-09-21):
 
-```
-execution reverted: failed to set account: kons1... is not allowed to receive funds: unauthorized
-```
+- **Module account** (`fee_collector`, `bonded_tokens_pool`, …):
+  `eth_estimateGas` *succeeds* and returns `21000` — the guard fires at
+  send, not in simulation — so `cast`, MetaMask and friends estimate fine
+  and then `eth_sendRawTransaction` refuses with the first string above.
+- **Precompile** (`0x…0900`, and the others): `eth_estimateGas` fails first
+  with `execution reverted: failed to set account: kons1... is not allowed
+  to receive funds: unauthorized`; with an explicit gas limit the send is
+  refused with the second string above.
 
 **Residual case: internal calls.** The submission check only sees the
 transaction's own `to`. If a *contract* forwards value to a blocked address
@@ -95,16 +99,30 @@ even when the transaction used its `0x` form.) Nothing was charged; the transact
 never entered the mempool.
 
 **What it means.** The chain has a compliance block list (`x/compliance`),
-enforced for **every** transaction, EVM and Cosmos alike, native KASH
-included. A transaction is rejected if *any* address it involves is frozen:
-the sender, the recipient, an EVM `to`, a delegation authority in an
-EIP-7702 authorization list, and so on. The check runs in the mempool
-pre-check as well as the ante handler, so the refusal is immediate and
-explained rather than discovered at block time.
+checked on every transaction, EVM and Cosmos alike. A transaction is
+rejected if a frozen address **signs** it (the sender, a delegation
+authority in an EIP-7702 authorization list) or is its direct **`to`** (a
+bank send recipient, an EVM `to`). The check runs in the mempool pre-check
+as well as the ante handler, so the refusal is immediate and explained
+rather than discovered at block time.
+
+**What it does not mean.** A freeze does **not** immobilise the address's
+balance. The check looks at signers and the transaction's `to`, not at bank
+transfers, and precompiles move balance directly: KASH can still be pulled
+out of a frozen account through the werc20 precompile or any contract by an
+allowance granted before the freeze (`transferFrom(frozen, spender)`
+succeeds), and can still arrive by contract call (`transfer(frozen, …)`
+succeeds — only a plain value transfer or bank send *to* it is refused).
+Reproduced on a dev chain 2026-09-21. A contract that must not serve a
+frozen address has to call
+[`isFrozen`](/contracts#icompliance-at-0x0900) itself. A bank-level
+restriction is planned before mainnet; until then, do not describe a freeze
+as "the funds are locked".
 
 Freezes come from the compliance authority (a foundation multisig on
-mainnet) through an on-chain timelock — 24 h on mainnet; a per-network
-genesis parameter, short on `testnet-1` and 60 s on a local dev chain — or
+mainnet) through an on-chain timelock — 24 h by default (governance-changeable,
+minimum 1 min; `testnet-1`'s value is set in its genesis, `local_node.sh`
+uses 60 s) — or
 as an **emergency freeze** that takes effect immediately and auto-expires
 after the timelock unless ratified; governance can override any entry. Every change is an on-chain
 event.
@@ -170,7 +188,7 @@ Two message families are worth knowing by name:
 |---|---|
 | `/ibc.applications.transfer.v1.MsgTransfer` | all IBC sends stop, Cosmos and EVM (the ICS20 precompile included) |
 | `/cosmos.evm.vm.v1.MsgEthereumTx` | the **entire EVM is paused** — every `eth_sendRawTransaction` is refused until reset |
-| `/cosmos.staking.v1beta1.MsgCreateValidator` | **disabled by design from genesis** on both networks: validator admission is permissioned (D16), see [Run a Validator](/run-a-validator#become-a-validator). Not a fault. |
+| `/cosmos.staking.v1beta1.MsgCreateValidator` | **disabled by design from genesis** on both networks: validator admission is permissioned, see [Run a Validator](/run-a-validator#become-a-validator). Not a fault. (Decided; the genesis tooling does not write the entry yet, so a dev chain accepts the message.) |
 
 The breaker cannot disable its own messages or governance's, so a trip is
 always reversible.

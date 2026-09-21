@@ -23,8 +23,8 @@ exists).
 | Tendermint RPC | `http://localhost:26657` |
 
 Started via `./local_node.sh -y` in the `konstellation` repo. Chain ID
-`56670` (local/unknown networks only — never a real network's ID, per the
-chain-id invariant in `ENGINEERING.md`).
+`56670` (local/unknown networks only — the node never lets a dev chain run
+with a real network's ID; see [Run a Validator](/run-a-validator#the-chain-id-invariant)).
 
 ## testnet-1
 
@@ -51,4 +51,4 @@ Chain ID `5667`.
 Point clients at your own node instead of a shared endpoint. See
 [Run a Validator](/run-a-validator) for hardware and configuration —
 an RPC/archive node uses the same base configuration with pruning tuned for
-its role (§9.2 of `ENGINEERING.md`).
+its role.

@@ -89,11 +89,17 @@ Konstellation's range starts at `0x…0900`.
 
 ### `ICompliance` at `0x…0900`
 
-The chain itself refuses every transaction that *involves* a frozen address
-— EVM and Cosmos, native KASH included — before execution (see
-[Troubleshooting](/troubleshooting#address-is-frozen)). That check cannot
-see internal calls, so a contract that forwards user-supplied addresses, or
-that wants to serve only verified addresses, calls this precompile. All
+What a freeze does today, precisely: it stops the address from **signing**
+transactions and from being the direct `to` of one — EVM and Cosmos alike,
+checked before execution (see
+[Troubleshooting](/troubleshooting#address-is-frozen)). It does **not**
+immobilise the address's balance: KASH can still be pulled out through the
+werc20 precompile or any contract by an allowance granted before the
+freeze, and can still arrive by contract call, because the check runs on
+signers and the transaction's `to`, not on bank transfers. A contract that
+must not serve a frozen address therefore has to call `isFrozen` itself.
+(A bank-level restriction is planned before mainnet; the chain's own
+tracker records it as open.) That is what this precompile is for. All
 functions are `view` and cost only the precompile's base read gas.
 
 ```solidity
@@ -128,12 +134,14 @@ interface ICompliance {
 Source: `konstellation/x/compliance/precompile/ICompliance.sol` (the ABI is
 `abi.json` next to it). Semantics worth knowing:
 
-- Two lists. The **blocklist** (`isFrozen`) is what the chain enforces; the
+- Two lists. The **blocklist** (`isFrozen`) is what the chain enforces —
+  on signers and direct recipients, as above, not on balances; the
   **allowlist** (`isVerified`) is opt-in — the chain never requires an
   address to be verified to transact, only being frozen stops a tx.
 - List changes come from the compliance authority through an on-chain
-  timelock — **24 h on mainnet**; it is a per-network genesis parameter,
-  short on `testnet-1` and 60 s on a `local_node.sh` dev chain — or as an
+  timelock — **24 h by default** (`konstellationd init` writes `86400s`;
+  governance-changeable, minimum 1 min; `testnet-1`'s value is whatever its
+  published genesis sets, and `local_node.sh` sets 60 s) — or as an
   emergency freeze that takes effect immediately and auto-expires after the
   timelock unless ratified; governance can override any entry. Every action
   is an on-chain event.
@@ -175,13 +183,13 @@ not-yet-audited bytecode into `genesis.json` forever.
 
 | Contract | Address | Notes |
 |---|---|---|
-| WKASH | `0x34Ab8285C63b876717C2c56151700D02623559bE` | Same on every network. CREATE2 via `Create2Deployer` `0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2`, salt `keccak256("konstellation-network/contracts:WKASH:v1")`. Pinned by `contracts/test/DeployWKASH.t.sol`, which fails if a code, solc, optimizer or `evm_version` change moves it. |
+| WKASH | `0x34Ab8285C63b876717C2c56151700D02623559bE` — **provisional** until deployed on `testnet-1` and listed in `networks/testnet-1/chain.json` | Same on every network. CREATE2 via `Create2Deployer` `0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2`, salt `keccak256("konstellation-network/contracts:WKASH:v1")`. Pinned by `contracts/test/DeployWKASH.t.sol`, which fails if a code, solc, optimizer or `evm_version` change moves it. The pin, the Prague/metadata-free build settings and the vesting contracts below are on `contracts` pull request #2, not yet merged. |
 
 The bytecode is compiled metadata-free (`bytecode_hash = "none"`,
 `cbor_metadata = false`) so a comment edit cannot move the address; the
 trade-off is that Blockscout source verification shows a **partial match**
 (metadata stripped), which is expected. Contracts are compiled for the
-**Prague** EVM (`evm_version = "prague"`, D17) — the fork the chain runs from
+**Prague** EVM (`evm_version = "prague"`) — the fork the chain runs from
 genesis; Osaka is not enabled, so never compile for it (`CLZ` would be an
 invalid opcode here). Cancun-targeted bytecode runs unchanged.
 
@@ -191,28 +199,37 @@ werc20 precompile at `0xD4949664cD82660AaE99bEdc034a0deA8A0bd517`.
 ## Vesting
 
 Vesting uses **Solidity vesting contracts** (`contracts/src/vesting/`), not
-`x/auth` vesting accounts — decision D12 in `ENGINEERING.md §11`, taken
-because a peer chain attributed its exploit to a flaw touching vesting
-accounts and balance handling. Keeping vesting in audited application code
-keeps consensus-critical account logic stock.
+`x/auth` vesting accounts — a deliberate decision, taken because a peer
+chain attributed its exploit to a flaw touching vesting accounts and
+balance handling. Keeping vesting in audited application code keeps
+consensus-critical account logic stock.
 
-Built 2026-09-20 on an OpenZeppelin v5.7.0 base:
+Built 2026-09-20 on an OpenZeppelin v5.7.0 base (`contracts` pull request
+#2, under review):
 
 | File | Role |
 |---|---|
 | `KonstellationVestingWallet.sol` | non-revocable wallet: treasury and community tranches |
 | `RevocableVestingWallet.sol` | team wallet: one-shot `revoke()` by the foundation multisig; unvested returns to the treasury, vested stays with the beneficiary |
-| `VestingSchedules.sol` | the one place `TOKENOMICS.md §7`'s numbers live (a vesting year is 365 days) |
+| `VestingSchedules.sol` | the one place the schedule numbers below live (a vesting year is 365 days) |
 | `script/DeployVesting.s.sol` | JSON config → CREATE2 wallets; `predict()` gives the addresses genesis funds |
 
 Every wallet is a CREATE2 deploy through `Create2Deployer`, so its address
-is known before genesis and **`genesis.json` funds it directly at block 0**
-— there is no post-genesis funding step. Vesting is **native KASH only**:
+is known before genesis and **`genesis.json` funds it directly at block 0**.
+There is no post-genesis *funding* step, but there is a post-genesis
+*deploy* step: until `DeployVesting.s.sol` is run, the KASH sits at
+codeless addresses that no key can move (a plain balance at a
+not-yet-existing contract). The deploy is permissionless and idempotent —
+anyone can run it and the result is identical whoever does — and the
+foundation runs it as part of the launch sequence, right after genesis and
+before anything is due (the treasury wallet and the first community
+tranche vest linearly from TGE, so `release()` on them is meaningful from
+day one; nothing is lost while the code is absent). Vesting is **native KASH only**:
 OpenZeppelin's ERC-20 `release(token)` path is disabled on purpose, because
 the werc20 precompile presents the native balance as an ERC-20 and would let
 a beneficiary withdraw the same KASH twice.
 
-The schedules (`TOKENOMICS.md §7`, on a 1 B KASH supply):
+The schedules, on a 1 B KASH genesis supply:
 
 | Bucket | Liquid at genesis | Locked part | Revocable |
 |---|---|---|---|

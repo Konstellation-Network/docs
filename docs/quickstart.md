@@ -11,8 +11,10 @@ sidebar_position: 1
 Konstellation has not launched a public network yet. The `testnet-1` RPC
 and explorer URLs on this page are placeholders until the genesis is
 published in the [`networks`
-repo](https://github.com/konstellation-network/networks). Everything else —
-chain ids, token, addresses, the local dev chain — is final.
+repo](https://github.com/konstellation-network/networks). Chain ids, token
+and the local dev chain are settled; contract addresses that are not
+genesis preinstalls (WKASH, vesting) are provisional until deployed on
+`testnet-1` and listed in `networks/testnet-1/chain.json`.
 :::
 
 ## Network parameters

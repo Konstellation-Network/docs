@@ -14,8 +14,8 @@ until `networks/testnet-1` publishes them. The genesis set on both networks
 is 10 foundation-run validators; independent operators are admitted
 afterwards through the permissioned procedure described under
 [Become a validator](#become-a-validator) — and are admitted onto
-`testnet-1` first precisely so they can find the gaps in this page
-(`ENGINEERING.md §15`, phase 6). If something here does not work as
+`testnet-1` first precisely so they can find the gaps in this page. If
+something here does not work as
 written, that is a docs bug, please report it.
 :::
 
@@ -25,7 +25,9 @@ differs between `testnet-1` and `konstellation-1` lives in the network's
 `genesis.json` (in the [`networks`](https://github.com/konstellation-network/networks)
 repo) and in your own configuration. The EVM runs the **Prague** (Pectra)
 fork from genesis, which is what `cosmos/evm` v0.7.3 activates by default;
-Osaka is deliberately not enabled (D17 in `ENGINEERING.md §11`) — nothing
+Osaka is deliberately not enabled (a recorded decision: cosmos/evm never
+activates it, and its native P-256 precompile would collide with the one at
+`0x…0100`) — nothing
 for an operator to configure, but worth knowing when a wallet or tool asks.
 
 ## Hardware
@@ -41,10 +43,11 @@ storage costs block time.
 ## Two rules that are never relaxed
 
 :::danger Never build the binary on a validator
-Every release binary comes from CI in the `konstellation` repo, built twice
-on independent runners from a signed tag, published only when both checksums
-agree, with GitHub build provenance attached. Download the release asset and
-verify its SHA256 against the ledger in
+Every release binary comes from CI in the `konstellation` repo (release
+pipeline under review, not yet merged): built twice on independent runners
+from a signed tag, published only when both checksums agree, with GitHub
+build provenance attached. Download the release asset and verify its
+SHA256 against the ledger in
 [`networks/RELEASES.md`](https://github.com/konstellation-network/networks/blob/main/RELEASES.md)
 — never against a chat message. Nothing runs a binary that is not in that
 table.
@@ -80,18 +83,44 @@ proxy in front of it — the JSON-RPC server itself has no auth. Never expose
 
 ## Install the binary
 
+Everything below runs as a dedicated system user, which is also the user
+the systemd unit runs as. Create it once and do every step as it:
+
+```sh
+sudo useradd -r -m -s /bin/bash konstellation
+sudo -iu konstellation
+```
+
 Cosmovisor with auto-download **off**. Upgrade binaries are staged by hand
-after checksum verification (see [Upgrades](#upgrades)).
+after checksum verification (see [Upgrades](#upgrades)). Cosmovisor itself
+is a pinned release too: download the tarball, check it against the
+`SHA256SUMS` published with that release, and extract only the binary.
+
+```sh
+CV=v1.7.0
+curl -fsSLO "https://github.com/cosmos/cosmos-sdk/releases/download/cosmovisor%2F${CV}/cosmovisor-${CV}-linux-amd64.tar.gz"
+sha256sum -c <<< "07f2824d924bd96029009047bffbbb0645769b90a9423a7872d3240880de88ba  cosmovisor-${CV}-linux-amd64.tar.gz"
+tar -xzf "cosmovisor-${CV}-linux-amd64.tar.gz" cosmovisor
+sudo install -m 0755 cosmovisor /usr/local/bin/cosmovisor
+```
+
+(The checksum is from `SHA256SUMS-cosmovisor-v1.7.0.txt` on that release —
+compare it yourself; this page is not the trust root for it either.)
+
+Then the chain binary. The provenance check must name the repository and
+the workflow: `--owner` alone would accept a build from any repository in
+the organisation.
 
 ```sh
 VERSION=<from networks/RELEASES.md>
 curl -fsSLO "https://github.com/Konstellation-Network/konstellation/releases/download/${VERSION}/konstellationd-${VERSION}-linux-amd64"
 sha256sum -c <<< "<sha256 from RELEASES.md>  konstellationd-${VERSION}-linux-amd64"
-# optional but recommended: GitHub build provenance
-gh attestation verify "konstellationd-${VERSION}-linux-amd64" --owner Konstellation-Network
+gh attestation verify "konstellationd-${VERSION}-linux-amd64" \
+  --repo Konstellation-Network/konstellation \
+  --signer-workflow Konstellation-Network/konstellation/.github/workflows/release.yml
 
 export DAEMON_NAME=konstellationd
-export DAEMON_HOME=$HOME/.konstellationd
+export DAEMON_HOME=$HOME/.konstellationd            # /home/konstellation/.konstellationd
 export DAEMON_ALLOW_DOWNLOAD_BINARIES=false
 export DAEMON_RESTART_AFTER_UPGRADE=true
 mkdir -p "$DAEMON_HOME/cosmovisor/genesis/bin"
@@ -200,15 +229,24 @@ a node that already has keys, and never edit the genesis to match.
 ## Genesis
 
 Replace the placeholder genesis `init` wrote with the published one and
-verify the hash **before** starting. `networks/<net>/genesis.sha256` is
-checked by CI on every commit to that repo.
+verify the hash **before** starting. Two things matter about *how*:
+
+- The `.sha256` file next to `genesis.json` in the `networks` repo is a
+  consistency check (CI keeps the pair in step), **not** a second trust
+  root — a hostile genesis carrying the real EIP-155 id would pass every
+  check on this page if both files came from the same place. Fetch by a
+  **tag or commit SHA**, never `main`, and compare the hash against the
+  value published *separately*: the release announcement and the join
+  table at the bottom of this page.
+- `genesis validate` checks shape, not identity.
 
 ```sh
-# testnet-1 — placeholder paths; the files do not exist yet
+# testnet-1 — placeholder ref and hash; the files do not exist yet
+REF=<tag or commit SHA from the release announcement>
 curl -fsSL -o "$DAEMON_HOME/config/genesis.json" \
-  https://raw.githubusercontent.com/Konstellation-Network/networks/main/testnet-1/genesis.json
-curl -fsSL https://raw.githubusercontent.com/Konstellation-Network/networks/main/testnet-1/genesis.sha256 \
-  | (cd "$DAEMON_HOME/config" && sha256sum -c -)
+  "https://raw.githubusercontent.com/Konstellation-Network/networks/${REF}/testnet-1/genesis.json"
+sha256sum "$DAEMON_HOME/config/genesis.json"
+# must equal the hash in the announcement / the join table below — not merely the .sha256 file
 "$DAEMON_HOME/cosmovisor/genesis/bin/konstellationd" genesis validate --home "$DAEMON_HOME"
 ```
 
@@ -228,9 +266,35 @@ private_peer_ids = "<validator_node_id>"   # never gossiped
 
 Sign with [Horcrux](https://github.com/strangelove-ventures/horcrux)
 (threshold signing across 3+ cosigners in different regions — the preferred
-option for a chain holding user funds, and what the in-house fleet uses) or
-`tmkms` + YubiHSM2. Either way the key never sits on the node itself — and the
-one-key-one-node rule above still applies to the cosigner set as a whole.
+option for a chain holding user funds, and what the foundation's own
+validators use) or `tmkms` + YubiHSM2. Note that **`init` has already
+written a consensus key** to `config/priv_validator_key.json` on the node;
+a remote signer does not make that file go away, you do:
+
+1. Copy `config/priv_validator_key.json` to an **offline** machine and
+   shard it there (`horcrux create-shares …`, or import it into tmkms).
+   Distribute the shards to the cosigners.
+2. On the validator host — and on every other host that ever held a copy —
+   destroy the file: `shred -u config/priv_validator_key.json`. A validator
+   host must never hold the key file once a remote signer exists.
+3. Point the node at the signer in `config.toml`:
+   `priv_validator_laddr = "tcp://0.0.0.0:1234"` (the address the cosigners
+   connect to; firewall it to them). With it set the node signs through the
+   socket. It will still create a *new, random* `priv_validator_key.json`
+   on the next start if none exists (`LoadOrGenFilePV` runs unconditionally
+   in the start command) — that file is a throwaway, not your validator
+   key; do not mistake its reappearance for a restore, and do not reuse it.
+
+And two rules about state, both double-sign paths:
+
+- **Never restore `config/` from a backup onto a second host.** A backup
+  that contains the key (or the node key plus a state file) is a second
+  validator waiting to happen.
+- **Never restore or hand-edit `data/priv_validator_state.json`.** It is
+  the node's record of the last height it signed; rewinding it is how a
+  node signs a second block at the same height. (Remote signers keep their
+  own copy of this state; the same rule applies to it.) The
+  one-key-one-node rule above applies to the cosigner set as a whole.
 
 ## Pruning
 
@@ -253,15 +317,22 @@ cosmovisor run start --home "$DAEMON_HOME"
 konstellationd status | jq .sync_info
 ```
 
-Run it under systemd. This is the in-house unit
-(`infra/ansible/roles/cosmovisor/templates/cosmovisor.service.j2`) with the
-variables filled in:
+Run it under systemd. This is the unit the foundation's own validators run,
+with the variables filled in:
 
 ```ini
 [Unit]
 Description=Konstellation cosmovisor
 After=network-online.target
 Wants=network-online.target
+# Only if data/ lives on a separate volume (local NVMe, a cloud data disk):
+# never let the node start on the bare directory underneath. A host that
+# comes back with an empty volume would otherwise start with its key and a
+# priv_validator_state.json at height 0 — the double-sign path. With these
+# two lines the unit stays inactive (a "node down" page) until the volume
+# is mounted.
+RequiresMountsFor=/home/konstellation/.konstellationd/data
+ConditionPathIsMountPoint=/home/konstellation/.konstellationd/data
 
 [Service]
 Type=simple
@@ -278,7 +349,10 @@ Environment=DAEMON_HOME=/home/konstellation/.konstellationd
 # verifying its checksum is exactly what the release process exists to prevent.
 Environment=DAEMON_ALLOW_DOWNLOAD_BINARIES=false
 Environment=DAEMON_RESTART_AFTER_UPGRADE=true
-Environment=UNSAFE_SKIP_BACKUP=false
+# cosmovisor's pre-upgrade backup copies the whole data directory into
+# DAEMON_HOME — the boot disk, next to a multi-TB data volume — so the first
+# upgrade would fill it. Rollback is your own H−1 snapshot (see Upgrades).
+Environment=UNSAFE_SKIP_BACKUP=true
 
 [Install]
 WantedBy=multi-user.target
@@ -289,8 +363,8 @@ WantedBy=multi-user.target
 The genesis set is **10 foundation-run validators** created by gentx, on
 `testnet-1` and `konstellation-1` alike (`max_validators` is 30, so 20 seats
 are empty at genesis). Admission of further validators is **permissioned**
-(decisions D7 and D16 in `ENGINEERING.md §11`), and it is enforced by the
-chain, not by policy: `/cosmos.staking.v1beta1.MsgCreateValidator` is
+— a recorded decision, opening up in stages by governance — and it is
+enforced by the chain, not by policy: `/cosmos.staking.v1beta1.MsgCreateValidator` is
 disabled in `x/circuit` genesis state on both networks, so a plain
 `tx staking create-validator` is refused at submission:
 
@@ -311,8 +385,8 @@ delegating to any validator is open from genesis.
 
 ### The admission procedure
 
-The foundation runs each admission as an announced window, following
-`infra/runbooks/validator-admission.md`. What you do:
+The foundation runs each admission as an announced window (a height
+range), from a written runbook. What you do:
 
 1. **Run a synced full node** on the network, behind a sentry, with the
    topology above (`pex = false`, your node id in the sentry's
@@ -331,11 +405,31 @@ The foundation runs each admission as an announced window, following
    pubkey, amounts and commission against what was agreed; nothing is
    broadcast yet — broadcasting now is refused by the breaker anyway.
 
+   The transaction is signed *now* but executes *later*, so it has to be
+   correct for the window, not for the moment you sign it. Three things
+   are easy to get wrong and each one wastes the window:
+
+   - **Fee.** `--generate-only` without gas flags produces a tx with an
+     empty fee (`fee.amount: []`), which fails inside the window with
+     `insufficient fee` whenever the base fee is above zero — it starts at
+     1 gwei at genesis, and the public RPC floors at 1 gwei. Set an explicit
+     gas limit and a price with margin: `--gas 300000 --gas-prices
+     10000000000esp` (10 gwei).
+   - **Expiry.** Set `--timeout-height` to the window's end plus a margin,
+     so a signed tx that misses the window cannot be replayed into a later
+     one you did not agree to.
+   - **Sequence.** The signature covers your account's sequence number.
+     **Send nothing from the operator account between signing and the
+     window**, or the tx is rejected for a sequence mismatch.
+
    ```sh
    konstellationd tx staking create-validator validator.json \
      --from <operator> --chain-id <net> --node <rpc> \
+     --gas 300000 --gas-prices 10000000000esp --timeout-height <window end + margin> \
      --generate-only > unsigned.json
-   konstellationd tx sign unsigned.json --from <operator> --chain-id <net> --node <rpc> > signed-create-validator.json
+   konstellationd tx sign unsigned.json --from <operator> --chain-id <net> --node <rpc> \
+     --gas 300000 --gas-prices 10000000000esp --timeout-height <window end + margin> \
+     > signed-create-validator.json
    ```
 
 4. **During the window** the 3-of-5 operations multisig resets the breaker
@@ -345,7 +439,7 @@ The foundation runs each admission as an announced window, following
    commission, insufficient funds, bad pubkey) means a *new* window, not an
    open gate, so get the parameters right first.
 
-Parameters that bind (D10): `commission_rate` ≥ `min_commission_rate`
+Parameters that bind: `commission_rate` ≥ `min_commission_rate`
 **5 %**, `min_self_delegation` ≤ what you actually self-delegate (it can be
 raised later, never lowered; amounts are in `esp`, `1000000000000000000` is
 1 KASH), unbonding **21 days**, downtime slash **0.01 %** (miss more than
@@ -361,19 +455,40 @@ from the disabled list for good; the stages are in the whitepaper roadmap.
 
 Auto-download is off. For each upgrade, `networks/<net>/upgrades/<name>.md`
 gives the upgrade name, halt height, binary URL, SHA256, any `config.toml` /
-`app.toml` changes and a rollback note. Stage the binary by hand:
+`app.toml` changes and a rollback note. Stage the binary by hand, verifying
+it exactly as at install time:
 
 ```sh
-mkdir -p "$DAEMON_HOME/cosmovisor/upgrades/<name>/bin"
-sha256sum -c <<< "<sha256 from the upgrade doc>  konstellationd-<version>-linux-amd64"
-install -m 0755 konstellationd-<version>-linux-amd64 "$DAEMON_HOME/cosmovisor/upgrades/<name>/bin/konstellationd"
+VERSION=<from the upgrade doc>; NAME=<upgrade name from the upgrade doc>
+curl -fsSLO "https://github.com/Konstellation-Network/konstellation/releases/download/${VERSION}/konstellationd-${VERSION}-linux-amd64"
+sha256sum -c <<< "<sha256 from the upgrade doc>  konstellationd-${VERSION}-linux-amd64"
+gh attestation verify "konstellationd-${VERSION}-linux-amd64" \
+  --repo Konstellation-Network/konstellation \
+  --signer-workflow Konstellation-Network/konstellation/.github/workflows/release.yml
+mkdir -p "$DAEMON_HOME/cosmovisor/upgrades/${NAME}/bin"
+install -m 0755 "konstellationd-${VERSION}-linux-amd64" "$DAEMON_HOME/cosmovisor/upgrades/${NAME}/bin/konstellationd"
 ```
 
 Cosmovisor swaps at the governance-set halt height; you do not need to be
 awake. On mainnet the height comes from a `MsgSoftwareUpgrade` proposal; on
-`testnet-1` the in-house fleet is upgraded with Ansible and external
-operators get the same upgrade doc. See [Upgrades](/upgrades) for the log of
-what has shipped.
+`testnet-1` the foundation's fleet is upgraded with Ansible and the same
+proposal is submitted so the governance path is rehearsed. See
+[Upgrades](/upgrades) for the log of what has shipped.
+
+**Rollback.** The unit above runs with `UNSAFE_SKIP_BACKUP=true`, so your
+rollback is the snapshot **you** take of `data/` at H−1 with the node
+stopped (or a filesystem snapshot of the data volume). Two rules:
+
+- If you ever restore `data/` from that snapshot, **keep the current
+  `data/priv_validator_state.json`** — the snapshot's copy is from a lower
+  height, and a node that re-signs at a height it already signed is
+  tombstoned.
+- For a **failed upgrade handler** (the node panics at the upgrade height —
+  the common case) do **not** restore data at all: the validators have
+  already precommitted block H. Repoint `cosmovisor/current` at the
+  previous version, move `data/upgrade-info.json` aside, and start the old
+  binary with `--unsafe-skip-upgrades <H>` until the network has agreed
+  what happens next. Block H stands; nothing is re-signed.
 
 ## Monitoring
 
@@ -401,7 +516,7 @@ publishes the genesis. The authoritative join page will be
 
 At genesis the validator set is 10 foundation-run validators
 (`max_validators` 30); independent operators are admitted afterwards through
-the permissioned D16 procedure above (phase 6) — `testnet-1` rehearses
+the permissioned procedure above — `testnet-1` rehearses
 exactly what mainnet runs, admissions included. Governance on `testnet-1` is deliberately
 fast (2-hour voting period) so upgrade drills take hours, not days;
 everything economic is identical to mainnet.

@@ -1,0 +1,10 @@
+# Copied from the org `.github` repo's CODEOWNERS.template (GitHub has no
+# org-wide default CODEOWNERS; every repo carries its own — ENGINEERING.md §17).
+#
+# Ownership is shared across engineering, not assigned to individuals
+# (ENGINEERING.md §17), so every path is owned by every current engineer. No
+# GitHub team exists yet; swap this list for a team once one is created.
+# Update the usernames if org membership changes
+# (`gh api orgs/Konstellation-Network/members --jq '.[].login'`).
+
+* @defidevrel @Evangel90 @Levi-Ojukwu @OlolaJaco @Psalmuel01

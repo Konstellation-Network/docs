@@ -26,8 +26,10 @@ docs/
 │   ├── rpc-endpoints.md
 │   ├── contracts.md
 │   ├── run-a-validator.md
-│   └── upgrades.md
+│   ├── upgrades.md
+│   └── troubleshooting.md
 ├── src/css/custom.css
+├── CODEOWNERS
 ├── docusaurus.config.js
 └── sidebars.js
 ```

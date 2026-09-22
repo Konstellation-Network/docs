@@ -77,13 +77,17 @@ at fixed addresses. `eth_getCode` on the static ones below returns empty
 (the werc20 precompile is the exception — `x/erc20` registers placeholder
 ERC-20 bytecode at its address so `extcodesize`-style "is this a contract"
 checks pass). `cosmos/evm`'s own precompiles occupy `0x…0100`–`0x…0807`;
-Konstellation's range starts at `0x…0900`.
+Konstellation's range starts at `0x…0900`. **Ten** addresses are active in
+genesis: `0x…0100`, `0x…0400`, `0x…0800`, `0x…0801`, `0x…0802`, `0x…0804`,
+`0x…0805`, `0x…0806`, `0x…0807`, `0x…0900`.
 
 | Precompile | Address | Notes |
 |---|---|---|
 | p256 (EIP-7212 / RIP-7212) | `0x0000000000000000000000000000000000000100` | secp256r1 signature verification, from `cosmos/evm`. What passkey / WebAuthn smart accounts need. |
 | bech32 | `0x…0400` | `cosmos/evm` |
-| staking, distribution, ICS20, vesting, bank, gov, slashing, ICS02 | `0x…0800`–`0x…0807` | `cosmos/evm` |
+| staking, distribution, ICS20 | `0x…0800`, `0x…0801`, `0x…0802` | `cosmos/evm` |
+| *(unassigned)* | `0x…0803` | Listed upstream as the "vesting" precompile address, but cosmos/evm v0.7.3 ships no implementation for it. **Not active** on Konstellation: a call to an active-but-unimplemented address panics in the keeper, so it is left out of the active set (konstellation PR #14). Nothing lives here. |
+| bank, gov, slashing, ICS02 | `0x…0804`, `0x…0805`, `0x…0806`, `0x…0807` | `cosmos/evm` |
 | WKASH (werc20 native precompile) | `0xD4949664cD82660AaE99bEdc034a0deA8A0bd517` | The native token as an ERC-20 interface, registered with `x/erc20` at genesis. Upstream default address, kept so tooling assumptions carry over. This is a precompile, not deployed bytecode — distinct from the `WKASH.sol` contract below. |
 | **ICompliance** | `0x0000000000000000000000000000000000000900` | Konstellation. Read-only view of the chain's compliance lists (below). |
 

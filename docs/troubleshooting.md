@@ -202,6 +202,25 @@ konstellationd query circuit disabled-list
 If something is on the list, it is there on purpose: watch the project's
 announcement channel rather than retrying.
 
+## WebSocket connection refused with `403` from a browser dapp
+
+**Symptom.** `eth_subscribe` (or any WebSocket use) from a page in a
+browser fails with HTTP `403` during the upgrade; the same endpoint works
+from `curl`, `cast`, Node or a wallet's own RPC client.
+
+**What it means.** The node's `app.toml` `[json-rpc] ws-origins` allow-list
+does not contain the page's host. It matches the `Origin` header's
+**hostname only** (no scheme, no port); requests with no `Origin` header
+are always admitted, which is why non-browser clients work. Fix: add the
+host to `ws-origins` on that node and restart, or ask the endpoint's
+operator to. Details on [RPC Endpoints](/rpc-endpoints#websocket-from-a-browser-eth_subscribe).
+
+**If the host is already in the list**, the node is on a binary older than
+konstellation PR #14, where the array was flattened to one string before
+it reached the server and every browser Origin got `403`. Upgrade the node;
+`--json-rpc.ws-origins a,b` on the `start` command line is the workaround
+until then.
+
 ## `panic: module account  does not exist: unknown address` on the first EVM tx after a restart
 
 **Symptom.** A node that was restarted on existing state panics on the first

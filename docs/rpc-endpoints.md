@@ -46,6 +46,37 @@ testnet-1 is live — this table should link there rather than duplicate it.
 Not launched. Will follow the same shape as testnet-1 once genesis exists.
 Chain ID `5667`.
 
+## WebSocket from a browser (`eth_subscribe`)
+
+A dapp running **in a browser** that opens the WebSocket endpoint (for
+`eth_subscribe`, `newHeads`, log subscriptions — anything the HTTP endpoint
+cannot push) is subject to the node's Origin allow-list, `app.toml`
+`[json-rpc] ws-origins`. The list holds browser Origin **hosts** — no
+scheme, no port: the node compares the `Origin` header's hostname only, so
+`["localhost", "app.example.com"]` admits `http://localhost:5173` and
+`https://app.example.com` alike, and `["*"]` admits everything. `init`'s
+default is `["127.0.0.1", "localhost"]`.
+
+| `Origin` header | Result |
+|---|---|
+| host is in `ws-origins` | `101 Switching Protocols` — connected |
+| host is not in `ws-origins` | `403 Forbidden` |
+| absent (Node, Go, `curl`, `cast`, wallets' own RPC clients) | always admitted |
+
+So: a browser dapp needs its host in `ws-origins` **on the RPC node it talks
+to**. If you run the node, add the host and restart; if it is a public
+endpoint, ask its operator. Non-browser clients never hit this.
+
+:::note Older binaries reject every browser Origin
+On binaries before konstellation PR #14 the `ws-origins` array never
+reached the server: the SDK's config interception flattened the TOML array
+into one string (`[127.0.0.1 localhost]`), so every browser Origin got
+`403` while `curl` worked. Fixed in PR #14 (`cmd/konstellationd/cmd/flags.go`
+restores the array after interception; `--json-rpc.ws-origins a,b` on the
+command line always worked and still wins). If a node returns `403` for an
+Origin that is plainly in its list, it is on an old binary.
+:::
+
 ## Running your own RPC node
 
 Point clients at your own node instead of a shared endpoint. See

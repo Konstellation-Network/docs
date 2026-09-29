@@ -10,8 +10,10 @@ sidebar_position: 4
 There is no validator set to join yet. Everything on this page about the
 binary's behaviour is real and verified against the current `konstellationd`;
 the `testnet-1` specifics (peers, genesis, release version) are placeholders
-until `networks/testnet-1` publishes them. The genesis set on both networks
-is 10 foundation-run validators; independent operators are admitted
+until `networks/testnet-1` publishes them. The genesis set on `testnet-1`
+and `konstellation-1` is 4 foundation-run validators (`devnet-1`, the dapp
+developers' network, runs a single foundation validator and takes no
+outside validators); independent operators are admitted
 afterwards through the permissioned procedure described under
 [Become a validator](#become-a-validator) — and are admitted onto
 `testnet-1` first precisely so they can find the gaps in this page. If
@@ -21,7 +23,7 @@ written, that is a docs bug, please report it.
 
 `konstellationd` is one binary for every network. It does not know which
 network it is on beyond the chain-id checks described below: everything that
-differs between `testnet-1` and `konstellation-1` lives in the network's
+differs between `devnet-1`, `testnet-1` and `konstellation-1` lives in the network's
 `genesis.json` (in the [`networks`](https://github.com/konstellation-network/networks)
 repo) and in your own configuration. The EVM runs the **Prague** (Pectra)
 fork from genesis, which is what `cosmos/evm` v0.7.3 activates by default;
@@ -155,7 +157,7 @@ If a recipe tells you to patch `stake` → `esp`, set `evm-chain-id`, or set
 - **`app.toml` `[evm] evm-chain-id` is derived from the genesis.** After
   writing `genesis.json`, `init` reads the chain-id back out of it and
   reconciles `app.toml`: a known network gets its required EIP-155 id
-  (`konstellation-1` → `5667`, `testnet-1` → `56671`); any other chain-id
+  (`konstellation-1` → `5667`, `devnet-1` → `56672`, `testnet-1` → `56671`); any other chain-id
   gets the local id `56670`, and never a real network's id. A fresh
   `app.toml` is written with the right value directly; one that already
   existed (for example created by `konstellationd config set client
@@ -179,7 +181,7 @@ If a recipe tells you to patch `stake` → `esp`, set `evm-chain-id`, or set
 
 - The `genesis profile:` line tells you which governance timings the
   genesis got. Only the exact chain-id `konstellation-1` selects the mainnet
-  profile (3-day voting, 1 000 / 5 000 KASH deposits); `testnet-1`, local and
+  profile (3-day voting, 1 000 / 5 000 KASH deposits); `devnet-1`, `testnet-1`, local and
   unknown chain-ids get the fast testnet/dev profile (2 h / 30 min, 10 / 50
   KASH). Irrelevant when you replace the placeholder genesis with a
   published one, but it is why a dev chain and mainnet look different.
@@ -218,7 +220,7 @@ belongs only to that network, because a transaction signed under it would
 replay there:
 
 ```
-panic: genesis chain-id "my-devnet" is not testnet-1 but app.toml has evm-chain-id 56671, which belongs to testnet-1: a tx signed here would replay there; use 56670 (local) or another unreserved id
+panic: genesis chain-id "my-chain" is not testnet-1 but app.toml has evm-chain-id 56671, which belongs to testnet-1: a tx signed here would replay there; use 56670 (local) or another unreserved id
 ```
 
 If you see any of these, a file in `config/` is stale (usually
@@ -360,12 +362,13 @@ WantedBy=multi-user.target
 
 ## Become a validator
 
-The genesis set is **10 foundation-run validators** created by gentx, on
-`testnet-1` and `konstellation-1` alike (`max_validators` is 30, so 20 seats
-are empty at genesis). Admission of further validators is **permissioned**
+The genesis set is **4 foundation-run validators** created by gentx, on
+`testnet-1` and `konstellation-1` alike (`max_validators` is 30, so 26 seats
+are empty at genesis). `devnet-1` is not a validator network: it runs one
+foundation validator for dapp developers and admits no one. Admission of further validators is **permissioned**
 — a recorded decision, opening up in stages by governance — and it is
 enforced by the chain, not by policy: `/cosmos.staking.v1beta1.MsgCreateValidator` is
-disabled in `x/circuit` genesis state on both networks, so a plain
+disabled in `x/circuit` genesis state on every network, so a plain
 `tx staking create-validator` is refused at submission:
 
 ```
@@ -472,7 +475,9 @@ install -m 0755 "konstellationd-${VERSION}-linux-amd64" "$DAEMON_HOME/cosmovisor
 Cosmovisor swaps at the governance-set halt height; you do not need to be
 awake. On mainnet the height comes from a `MsgSoftwareUpgrade` proposal; on
 `testnet-1` the foundation's fleet is upgraded with Ansible and the same
-proposal is submitted so the governance path is rehearsed. See
+proposal is submitted so the governance path is rehearsed. Every release
+rolls out in the same order: `testnet-1` first, then `devnet-1` one to two
+weeks before mainnet, then `konstellation-1`. See
 [Upgrades](/upgrades) for the log of what has shipped.
 
 **Rollback.** The unit above runs with `UNSAFE_SKIP_BACKUP=true`, so your
@@ -514,12 +519,14 @@ publishes the genesis. The authoritative join page will be
 | State sync / snapshots | **TBD** — `networks/testnet-1/snapshots.md` once archive nodes exist |
 | Public RPC | **TBD** — see [RPC Endpoints](/rpc-endpoints) |
 
-At genesis the validator set is 10 foundation-run validators
+At genesis the validator set is 4 foundation-run validators
 (`max_validators` 30); independent operators are admitted afterwards through
 the permissioned procedure above — `testnet-1` rehearses
 exactly what mainnet runs, admissions included. Governance on `testnet-1` is deliberately
 fast (2-hour voting period) so upgrade drills take hours, not days;
-everything economic is identical to mainnet.
+everything economic is identical to mainnet. `testnet-1` is where new
+releases land first and where upgrade drills, chaos tests and halt/restart
+drills happen, so expect planned disruption.
 
 If something breaks, [Troubleshooting](/troubleshooting) has the errors we
 know about.

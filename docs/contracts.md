@@ -9,7 +9,7 @@ sidebar_position: 3
 Konstellation ships a set of contracts preinstalled in genesis at their
 canonical, deterministic addresses, so existing wallet SDKs and tooling that
 hard-code these addresses work unmodified. Every address on this page is
-identical on `testnet-1`, `konstellation-1` and a local dev chain.
+identical on `devnet-1`, `testnet-1`, `konstellation-1` and a local dev chain.
 
 Two sources of truth, in order:
 
@@ -243,7 +243,7 @@ The schedules, on a 1 B KASH genesis supply:
 
 Per-wallet addresses are a function of the beneficiary config
 (`script/config/vesting.json`, from `vesting.example.json`; real team beneficiaries and TGE are not yet
-filled in). `testnet-1` mirrors the same shape with test addresses. This
+filled in). `devnet-1` and `testnet-1` mirror the same shape with test addresses. This
 page will list the deployed instances once `networks/<net>/genesis.json`
 funds them.
 

@@ -188,7 +188,7 @@ Two message families are worth knowing by name:
 |---|---|
 | `/ibc.applications.transfer.v1.MsgTransfer` | all IBC sends stop, Cosmos and EVM (the ICS20 precompile included) |
 | `/cosmos.evm.vm.v1.MsgEthereumTx` | the **entire EVM is paused** — every `eth_sendRawTransaction` is refused until reset |
-| `/cosmos.staking.v1beta1.MsgCreateValidator` | **disabled by design from genesis** on both networks: validator admission is permissioned, see [Run a Validator](/run-a-validator#become-a-validator). Not a fault. (Decided; the genesis tooling does not write the entry yet, so a dev chain accepts the message.) |
+| `/cosmos.staking.v1beta1.MsgCreateValidator` | **disabled by design from genesis** on every network: validator admission is permissioned, see [Run a Validator](/run-a-validator#become-a-validator). Not a fault. (Decided; the genesis tooling does not write the entry yet, so a dev chain accepts the message.) |
 
 The breaker cannot disable its own messages or governance's, so a trip is
 always reversible.

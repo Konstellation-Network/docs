@@ -101,23 +101,35 @@ never entered the mempool.
 **What it means.** The chain has a compliance block list (`x/compliance`),
 checked on every transaction, EVM and Cosmos alike. A transaction is
 rejected if a frozen address **signs** it (the sender, a delegation
-authority in an EIP-7702 authorization list) or is its direct **`to`** (a
-bank send recipient, an EVM `to`). The check runs in the mempool pre-check
-as well as the ante handler, so the refusal is immediate and explained
-rather than discovered at block time.
+authority in an EIP-7702 authorization list), is its direct **`to`** (a
+bank send recipient, an EVM `to`), or is named in a `transfer` /
+`transferFrom` on WKASH or another token precompile. The check runs in the
+mempool pre-check as well as the ante handler, so the refusal is immediate
+and explained rather than discovered at block time.
 
-**What it does not mean.** A freeze does **not** immobilise the address's
-balance. The check looks at signers and the transaction's `to`, not at bank
-transfers, and precompiles move balance directly: KASH can still be pulled
-out of a frozen account through the werc20 precompile or any contract by an
-allowance granted before the freeze (`transferFrom(frozen, spender)`
-succeeds), and can still arrive by contract call (`transfer(frozen, …)`
-succeeds — only a plain value transfer or bank send *to* it is refused).
-Reproduced on a dev chain 2026-09-21. A contract that must not serve a
-frozen address has to call
-[`isFrozen`](/contracts#icompliance-at-0x0900) itself. A bank-level
-restriction is planned before mainnet; until then, do not describe a freeze
-as "the funds are locked".
+If a block producer includes such a transaction anyway, it fails in the
+block with a different code: `sdk/5 … address is frozen: insufficient
+funds`, because fee deduction runs first and the bank restriction refuses
+the frozen fee payer. Same cause, and nothing is charged either way. A
+refused transaction stays in the node's seen-cache, so resend with new
+bytes (a new memo or fee) once the freeze is lifted.
+
+**What it covers.** Nothing can leave a frozen address, by any path. That
+includes an allowance granted before the freeze (`transferFrom(frozen, …)`
+is refused), a contract, an IBC transfer, authz or a fee grant. No one's
+transaction can fund it either. A precompile transfer called from a
+contract reverts with `execution reverted: … address is frozen`. A
+contract's internal `CALL{value}` to a frozen address is the one quiet case:
+the transaction is accepted and gas is charged, then it fails when it
+commits and does not show up in `eth_getTransactionReceipt`. Find the reason
+with `tx_search` (see
+[the no-receipt section](#my-evm-transaction-has-no-receipt-but-i-was-charged-gas)). Contracts that pay
+out should check [`isFrozen`](/contracts#icompliance-at-0x0900) first.
+
+**What it does not cover.** Protocol completions may still credit a frozen
+address: returned governance deposits, IBC refunds, completed unbonding, and
+payouts the chain makes itself at the start or end of a block. Its balance
+can rise that way, never fall.
 
 Freezes come from the compliance authority (a foundation multisig on
 mainnet) through an on-chain timelock — 24 h by default (governance-changeable,

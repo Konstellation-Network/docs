@@ -93,17 +93,36 @@ genesis: `0x…0100`, `0x…0400`, `0x…0800`, `0x…0801`, `0x…0802`, `0x…
 
 ### `ICompliance` at `0x…0900`
 
-What a freeze does today, precisely: it stops the address from **signing**
-transactions and from being the direct `to` of one — EVM and Cosmos alike,
-checked before execution (see
-[Troubleshooting](/troubleshooting#address-is-frozen)). It does **not**
-immobilise the address's balance: KASH can still be pulled out through the
-werc20 precompile or any contract by an allowance granted before the
-freeze, and can still arrive by contract call, because the check runs on
-signers and the transaction's `to`, not on bank transfers. A contract that
-must not serve a frozen address therefore has to call `isFrozen` itself.
-(A bank-level restriction is planned before mainnet; the chain's own
-tracker records it as open.) That is what this precompile is for. All
+What a freeze does, precisely: **nothing can leave a frozen address, and no
+one's transaction can fund it.** It binds at every level, EVM and Cosmos alike
+(see [Troubleshooting](/troubleshooting#address-is-frozen)):
+
+- The address cannot **sign**, and cannot be a transaction's direct `to` or
+  recipient. The transaction is refused at submission and nothing is charged.
+- An EVM call to `transfer` / `transferFrom` on WKASH or any other
+  `x/erc20` token precompile that **names** a frozen address is refused at
+  submission too. An allowance granted before the freeze cannot be spent.
+- **Every bank transfer** checks the list: precompiles, IBC transfers,
+  authz, fee grants. Called from a contract, such a transfer reverts with a
+  reason (`execution reverted: sender kons1…: address is frozen`), visible in
+  `eth_call`, `eth_estimateGas` and the receipt.
+- A contract's **internal value transfer** (`CALL{value}`) to or from a
+  frozen address fails when the transaction commits. The transaction was
+  accepted and gas is charged, but it does not appear in `eth_*`; the reason
+  is only in CometBFT's `tx_search`. A 0-value call to a frozen address still
+  succeeds.
+- A frozen **contract** cannot stake, vote or redirect rewards through the
+  staking, distribution or gov precompiles.
+
+One direction stays open: **protocol completions may still credit a frozen
+address**. These are returned governance deposits, IBC refunds, completed
+unbonding, and payouts made by the chain itself at the start or end of a
+block (for example after a slash). Its balance can go up this way, never
+down.
+
+So a contract that pays out should check `isFrozen` first. Otherwise one
+frozen payee fails its whole transaction, a batch payout included, at commit
+and out of sight of `eth_*`. That is what this precompile is for. All
 functions are `view` and cost only the precompile's base read gas.
 
 ```solidity
@@ -139,7 +158,7 @@ Source: `konstellation/x/compliance/precompile/ICompliance.sol` (the ABI is
 `abi.json` next to it). Semantics worth knowing:
 
 - Two lists. The **blocklist** (`isFrozen`) is what the chain enforces —
-  on signers and direct recipients, as above, not on balances; the
+  on signers, recipients and every balance change, as above; the
   **allowlist** (`isVerified`) is opt-in — the chain never requires an
   address to be verified to transact, only being frozen stops a tx.
 - List changes come from the compliance authority through an on-chain

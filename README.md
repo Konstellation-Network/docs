@@ -2,7 +2,7 @@
 
 Developer documentation site for Konstellation, built with
 [Docusaurus](https://docusaurus.io). Public, pre-testnet — most pages are
-placeholders until `networks/testnet-1` exists (see `ENGINEERING.md §6.6`
+placeholders until `networks/devnet-1` and `networks/testnet-1` exist (see `ENGINEERING.md §6.6`
 and `STATUS.md` in the org root for what's real vs. stubbed).
 
 ## Local development

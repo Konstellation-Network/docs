@@ -8,23 +8,40 @@ sidebar_position: 1
 # Quickstart
 
 :::caution Pre-testnet
-Konstellation has not launched a public network yet. The `testnet-1` RPC
-and explorer URLs on this page are placeholders until the genesis is
-published in the [`networks`
+Konstellation has not launched a public network yet. The `devnet-1` and
+`testnet-1` RPC, explorer and faucet URLs on this page are placeholders until
+each network's genesis is published in the [`networks`
 repo](https://github.com/konstellation-network/networks). Chain ids, token
 and the local dev chain are settled; contract addresses that are not
-genesis preinstalls (WKASH, vesting) are provisional until deployed on
-`testnet-1` and listed in `networks/testnet-1/chain.json`.
+genesis preinstalls (WKASH, vesting) are provisional until deployed and
+listed in `networks/<network>/chain.json`.
 :::
+
+## Which network?
+
+Konstellation runs three public networks. **Dapp developers start on
+`devnet-1`.**
+
+| Network | For | Validators | What to expect |
+|---|---|---|---|
+| **`devnet-1`** | **building and testing dapps** | 1, foundation-run | Runs the same release as mainnet; test KASH from the faucet; rarely reset |
+| `testnet-1` | validator operators: upgrade drills, chaos tests, validator admissions | 4, foundation-run | New releases land here first; expect planned disruption |
+| `konstellation-1` | mainnet, real value | 4, foundation-run at genesis; more admitted by a permissioned procedure, opening to permissionless by governance | — |
+
+A release reaches `testnet-1` first, then `devnet-1` one to two weeks before
+mainnet, then `konstellation-1` — so what works on devnet is what mainnet is
+about to run.
 
 ## Network parameters
 
 | Field | Value |
 |---|---|
 | Chain name | Konstellation |
+| Cosmos chain-id (devnet) | `devnet-1` |
 | Cosmos chain-id (testnet) | `testnet-1` |
 | Cosmos chain-id (mainnet) | `konstellation-1` |
 | EIP-155 chain ID (mainnet) | `5667` |
+| EIP-155 chain ID (devnet) | `56672` |
 | EIP-155 chain ID (testnet) | `56671` |
 | EIP-155 chain ID (local dev) | `56670` |
 | Native token | KASH |
@@ -33,14 +50,31 @@ genesis preinstalls (WKASH, vesting) are provisional until deployed on
 
 The EIP-155 ids are enforced by the node: a real network's id is used only by
 that network, and a local chain can never be given one, so a transaction
-signed for a dev chain cannot replay on `testnet-1` or mainnet.
+signed for a dev chain cannot replay on `devnet-1`, `testnet-1` or mainnet.
 
 ## Add Konstellation to MetaMask
 
 MetaMask → **Settings → Networks → Add a network → Add a network manually**.
 Rabby and other EIP-3085 wallets take the same values.
 
+### devnet-1 (start here)
+
+| Field | Value |
+|---|---|
+| Network name | Konstellation Devnet |
+| New RPC URL | **TBD** — published in `networks/devnet-1/chain.json` when the network launches; see [RPC Endpoints](/rpc-endpoints) |
+| Chain ID | `56672` |
+| Currency symbol | `KASH` |
+| Currency decimals | 18 |
+| Block explorer URL | **TBD** — Blockscout, see the [`explorer`](https://github.com/konstellation-network/explorer) repo |
+
+Test KASH comes from the devnet-1 faucet (**TBD** — [`faucet`](https://github.com/konstellation-network/faucet) repo).
+
 ### testnet-1
+
+Only if you are rehearsing validator operations or want a release before it
+reaches devnet — `testnet-1` may be disrupted by upgrade drills and chaos
+tests.
 
 | Field | Value |
 |---|---|
@@ -51,7 +85,7 @@ Rabby and other EIP-3085 wallets take the same values.
 | Currency decimals | 18 |
 | Block explorer URL | **TBD** — Blockscout, see the [`explorer`](https://github.com/konstellation-network/explorer) repo |
 
-Test KASH comes from the faucet (**TBD** — [`faucet`](https://github.com/konstellation-network/faucet) repo).
+testnet-1 has its own faucet too (**TBD**).
 
 ### Local dev chain
 
@@ -75,7 +109,7 @@ Programmatically (`wallet_addEthereumChain`), for the local chain:
 }
 ```
 
-`0xdd5e` is 56670; `testnet-1`'s `56671` is `0xdd5f`, mainnet's `5667` is `0x1623`.
+`0xdd5e` is 56670; `devnet-1`'s `56672` is `0xdd60`, `testnet-1`'s `56671` is `0xdd5f`, mainnet's `5667` is `0x1623`.
 
 ## Run a local dev chain
 
@@ -104,7 +138,7 @@ starts the node with every API enabled:
 | Block time | ~1 s (`timeout_commit = "1s"`); node `minimum-gas-prices` and `evm.min-tip` are 0 |
 
 The dev chain is a real `konstellationd`: the same genesis preinstalls,
-precompiles, compliance module and circuit breaker as `testnet-1`, with
+precompiles, compliance module and circuit breaker as `devnet-1` and `testnet-1`, with
 governance and compliance timelocks shortened to seconds so they can be
 exercised in a session (voting period 30 s, compliance timelocks 60 s, the
 validator key as the compliance authority).

@@ -7,9 +7,10 @@ sidebar_position: 2
 # RPC Endpoints
 
 :::caution Pre-testnet
-No public endpoints exist yet. This page is a placeholder for the table that
-will ship with `testnet-1` (see `networks/testnet-1/chain.json` once it
-exists).
+No public endpoints exist yet. This page is a placeholder for the tables
+that will ship with `devnet-1` and `testnet-1` (see
+`networks/<network>/chain.json` once they exist). Dapp developers: use
+`devnet-1`.
 :::
 
 ## Local development
@@ -26,7 +27,24 @@ Started via `./local_node.sh -y` in the `konstellation` repo. Chain ID
 `56670` (local/unknown networks only — the node never lets a dev chain run
 with a real network's ID; see [Run a Validator](/run-a-validator#the-chain-id-invariant)).
 
-## testnet-1
+## devnet-1 — for dapp developers
+
+| Protocol | Endpoint |
+|---|---|
+| EVM JSON-RPC | _TBD_ |
+| EVM WebSocket | _TBD_ |
+| Cosmos REST | _TBD_ |
+| Cosmos gRPC | _TBD_ |
+| Tendermint RPC | _TBD_ |
+| Explorer | _TBD — see [`explorer`](https://github.com/konstellation-network/explorer)_ |
+| Faucet | _TBD — see [`faucet`](https://github.com/konstellation-network/faucet)_ |
+
+Chain ID `56672`. One foundation-run validator, the same release as mainnet,
+rarely reset. Public endpoints will be published in
+`networks/devnet-1/chain.json` (cosmos chain-registry format) once devnet-1
+is live — this table should link there rather than duplicate it.
+
+## testnet-1 — validator and upgrade rehearsals
 
 | Protocol | Endpoint |
 |---|---|
@@ -37,13 +55,14 @@ with a real network's ID; see [Run a Validator](/run-a-validator#the-chain-id-in
 | Tendermint RPC | _TBD_ |
 | Explorer | _TBD — see [`explorer`](https://github.com/konstellation-network/explorer)_ |
 
-Chain ID `56671`. Public endpoints will be published in
+Chain ID `56671`. Four foundation-run validators; new releases land here
+first and the network may be disrupted by drills. Public endpoints will be published in
 `networks/testnet-1/chain.json` (cosmos chain-registry format) once
 testnet-1 is live — this table should link there rather than duplicate it.
 
 ## konstellation-1 (mainnet)
 
-Not launched. Will follow the same shape as testnet-1 once genesis exists.
+Not launched. Will follow the same shape as devnet-1 and testnet-1 once genesis exists.
 Chain ID `5667`.
 
 ## WebSocket from a browser (`eth_subscribe`)

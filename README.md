@@ -33,3 +33,7 @@ docs/
 ├── docusaurus.config.js
 └── sidebars.js
 ```
+
+## License
+
+Documentation text is licensed under [CC BY 4.0](LICENSE). Code in this repository, including code samples in the docs, is licensed under the [Apache License 2.0](LICENSE-CODE). The Konstellation name and logo are trademarks and are not licensed; see the [trademark policy](https://github.com/Konstellation-Network/.github).
